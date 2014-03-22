@@ -1,0 +1,5 @@
+#Haskell
+dist/
+
+#vim
+*.swp

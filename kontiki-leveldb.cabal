@@ -1,0 +1,38 @@
+Name:                kontiki-leveldb
+Version:             0.0.0.0
+Synopsis:            An implementation of kontiki using LevelDB as transaction log
+Description:         
+Homepage:            http://github.com/alphaHeavy/kontiki-leveldb
+
+Author:              Steve Severance
+Maintainer:          sseverance@alphaheavy.com
+Copyright:           (c) 2014, Alpha Heavy Industries
+
+License:             BSD3
+License-File:        LICENSE
+
+Category:            Network
+Build-Type:          Simple
+Cabal-Version:       >=1.8
+
+Source-Repository head
+  Type:     git
+  location: git://github.com/alphaHeavy/kontiki-leveldb.git
+
+Library
+  Exposed-Modules:     Data.Kontiki.LevelDB
+  Build-Depends:       base >= 4 && < 5
+                     , containers
+                     , binary >= 0.6.3
+                     , bytestring >= 0.10
+                     , filepath
+                     , kontiki
+                     , lens
+                     , leveldb-haskell
+                     , mtl
+                     , resourcet
+                     , transformers
+                     , QuickCheck
+  Ghc-Options:         -Wall -fwarn-incomplete-patterns
+
+
