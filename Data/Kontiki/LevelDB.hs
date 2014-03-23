@@ -1,7 +1,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-module Data.Kontiki.LevelDB () where
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+module Data.Kontiki.LevelDB (
+    initializeLog
+  , readValue
+  , truncateLog
+  , writeValue) where
 
 import Control.Applicative
 import Control.Monad.IO.Class
@@ -14,7 +19,7 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Identity
 import Database.LevelDB (DB)
 import qualified Database.LevelDB as LDB
-import Network.Kontiki.Raft
+import Network.Kontiki.Raft hiding (truncateLog)
 import System.FilePath
 
 import Prelude hiding (log)
@@ -90,9 +95,26 @@ initializeLog path = do
   transactionIndex <- LDB.open (path </> "index") LDB.defaultOptions
   return $ LevelDBLogType table transactionIndex
 
-insert :: MonadResource m => LevelDBLogType -> LevelDBEntry -> m ()
-insert (LevelDBLogType table index) entry@(Entry _ _ (key,_)) = do
+writeValue :: MonadResource m => LevelDBLogType -> LevelDBEntry -> m ()
+writeValue (LevelDBLogType table index) entry@(Entry _ _ (key,_)) = do
   LDB.put table defaultWriteOptions key $ entryToValue entry
   LDB.put index defaultWriteOptions (BL.toStrict $ encode $ eIndex entry) key
 
-defaultWriteOptions = LDB.WriteOptions True
+readValue :: MonadResource m => LevelDBLogType -> ByteString -> m (Maybe ByteString)
+readValue tlog key = do
+  mEntry <- getEntryFromTable tlog key
+  return $ fmap (\ (Entry _ _ (_,value)) -> value) mEntry
+
+truncateLog :: MonadResource m => LevelDBLogType -> Index -> m ()
+truncateLog (LevelDBLogType _ index) i = LDB.withIterator index LDB.defaultReadOptions func
+  where
+    newMinIndex = BL.toStrict $ encode i
+    func iterator = do
+      LDB.iterNext iterator
+      mKey <- LDB.iterKey iterator
+      case mKey of
+        Just x -> if x <= newMinIndex then LDB.delete index defaultWriteOptions x else func iterator
+        Nothing -> return ()
+
+defaultWriteOptions :: LDB.WriteOptions
+defaultWriteOptions = LDB.WriteOptions True --All Writes Should be Flushed
