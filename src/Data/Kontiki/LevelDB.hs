@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -5,12 +6,19 @@
 module Data.Kontiki.LevelDB (
     initializeLog
   , readValue
+  , runLevelDBLog
   , truncateLog
-  , writeValue) where
+  , writeValue
+  , LevelDBLog(..)
+  , LevelDBLogType(..)
+  , LevelDBMessage(..)
+  , LevelDBOperationType(..)) where
 
 import Control.Applicative
+import Control.Concurrent.Forkable
 import Control.Monad.IO.Class
-import Control.Monad.Reader (MonadReader, Reader, ask, lift, runReader)
+import Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
+import Control.Monad.Trans
 import Control.Monad.Trans.Resource
 import Data.Binary
 import Data.Binary.Put (runPut)
@@ -19,22 +27,11 @@ import qualified Data.ByteString.Lazy as BL
 import Data.Functor.Identity
 import Database.LevelDB (DB)
 import qualified Database.LevelDB as LDB
+import GHC.Generics
 import Network.Kontiki.Raft hiding (truncateLog)
 import System.FilePath
 
 import Prelude hiding (log)
-
-instance MonadResource Identity where
-  liftResourceT = liftResourceT
-
-instance MonadThrow Identity where
-  monadThrow = monadThrow
-
-instance MonadUnsafeIO Identity where
-  unsafeLiftIO = unsafeLiftIO
-
-instance MonadIO Identity where
-  liftIO = liftIO
 
 --LevelDB Layout
 --  Your Data Table (your key,your value)
@@ -43,9 +40,9 @@ instance MonadIO Identity where
 
 data LevelDBLogType = LevelDBLogType DB DB
 
-type LevelDBEntry = Entry (ByteString,ByteString)
+type LevelDBEntry = Entry LevelDBMessage
 
-newtype LevelDBLog r = LevelDBLog {unLevelDBLog :: Reader LevelDBLogType r}
+newtype MonadResource m => LevelDBLog m r = LevelDBLog {unLevelDBLog :: ReaderT LevelDBLogType m r}
   deriving ( Applicative
            , Functor
            , Monad
@@ -53,7 +50,8 @@ newtype LevelDBLog r = LevelDBLog {unLevelDBLog :: Reader LevelDBLogType r}
            , MonadReader LevelDBLogType
            , MonadResource
            , MonadThrow
-           , MonadUnsafeIO)
+           , MonadTrans
+           )
 
 getEntryFromTable :: MonadResource m => LevelDBLogType -> ByteString -> m (Maybe LevelDBEntry)
 getEntryFromTable (LevelDBLogType table _) tableKey = do
@@ -62,18 +60,19 @@ getEntryFromTable (LevelDBLogType table _) tableKey = do
     Just val ->
       case decodeOrFail $ BL.fromStrict val of
         Left _ -> return Nothing
-        Right (record, _ , (index,term)) -> return $ Just $ Entry index term (tableKey,BL.toStrict record)
+        Right (record, _ , (index,term)) -> return $ Just $ Entry index term $ LevelDBMessage GetResult tableKey (BL.toStrict record)
     Nothing -> return Nothing
 
 entryToValue :: LevelDBEntry -> ByteString
-entryToValue (Entry index term (_,value)) = BL.toStrict $ runPut action
+entryToValue (Entry index term (LevelDBMessage _ _ value)) = BL.toStrict $ runPut action
   where
     action = do
       put index
       put term
       put value
 
-instance MonadLog LevelDBLog (ByteString,ByteString) where
+-- instance Binary a => MonadLog LevelDBLog a where
+instance MonadResource m => MonadLog (LevelDBLog m) LevelDBMessage where
   logEntry i = do
     let key = encode i
     tlog@(LevelDBLogType _ transactionIndex) <- ask
@@ -96,14 +95,14 @@ initializeLog path = do
   return $ LevelDBLogType table transactionIndex
 
 writeValue :: MonadResource m => LevelDBLogType -> LevelDBEntry -> m ()
-writeValue (LevelDBLogType table index) entry@(Entry _ _ (key,_)) = do
+writeValue (LevelDBLogType table index) entry@(Entry _ _ (LevelDBMessage PutRequest key value)) = do
   LDB.put table defaultWriteOptions key $ entryToValue entry
   LDB.put index defaultWriteOptions (BL.toStrict $ encode $ eIndex entry) key
 
 readValue :: MonadResource m => LevelDBLogType -> ByteString -> m (Maybe ByteString)
 readValue tlog key = do
   mEntry <- getEntryFromTable tlog key
-  return $ fmap (\ (Entry _ _ (_,value)) -> value) mEntry
+  return $ fmap (\ (Entry _ _ (LevelDBMessage _ _ value)) -> value) mEntry
 
 truncateLog :: MonadResource m => LevelDBLogType -> Index -> m ()
 truncateLog (LevelDBLogType _ index) i = LDB.withIterator index LDB.defaultReadOptions func
@@ -118,3 +117,17 @@ truncateLog (LevelDBLogType _ index) i = LDB.withIterator index LDB.defaultReadO
 
 defaultWriteOptions :: LDB.WriteOptions
 defaultWriteOptions = LDB.WriteOptions True --All Writes Should be Flushed
+
+runLevelDBLog :: (MonadResource m) => LevelDBLog m r -> LevelDBLogType -> m r
+runLevelDBLog = runReaderT . unLevelDBLog
+
+data LevelDBOperationType = PutRequest | GetResult | Delete deriving (Enum,Eq,Show, Generic)
+
+data LevelDBMessage = LevelDBMessage{
+  lmOperationType :: LevelDBOperationType,
+  lmKey :: ByteString,
+  lmValue :: ByteString
+} deriving (Eq, Show, Generic)
+
+instance Binary LevelDBOperationType
+instance Binary LevelDBMessage

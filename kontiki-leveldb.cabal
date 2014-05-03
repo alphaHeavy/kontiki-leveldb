@@ -26,6 +26,7 @@ Library
                      , binary >= 0.6.3
                      , bytestring >= 0.10
                      , filepath
+                     , forkable-monad
                      , kontiki
                      , lens
                      , leveldb-haskell
@@ -34,5 +35,22 @@ Library
                      , transformers
                      , QuickCheck
   Ghc-Options:         -Wall -fwarn-incomplete-patterns
+  hs-source-dirs:      src
 
-
+test-suite kontiki-leveldb-test
+  default-language:
+    Haskell2010
+  hs-source-dirs:
+    test
+  type:
+    exitcode-stdio-1.0
+  main-is:
+    Main.hs
+  build-depends:
+    base,
+    binary,
+    test-framework             >= 0.4,
+    test-framework-hunit       >= 0.2,
+    test-framework-quickcheck2 >= 0.2,
+    HUnit,
+    QuickCheck
