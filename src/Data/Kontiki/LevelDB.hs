@@ -2,6 +2,8 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Kontiki.LevelDB (
     initializeLog
@@ -16,6 +18,7 @@ module Data.Kontiki.LevelDB (
 
 import Control.Applicative
 import Control.Concurrent.Forkable
+import Control.Monad.Base
 import Control.Monad.IO.Class
 import Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
 import Control.Monad.Trans
@@ -42,16 +45,19 @@ data LevelDBLogType = LevelDBLogType DB DB
 
 type LevelDBEntry = Entry LevelDBMessage
 
-newtype MonadResource m => LevelDBLog m r = LevelDBLog {unLevelDBLog :: ReaderT LevelDBLogType m r}
+newtype LevelDBLog m r = LevelDBLog {unLevelDBLog :: ReaderT LevelDBLogType m r}
   deriving ( Applicative
            , Functor
            , Monad
            , MonadIO
            , MonadReader LevelDBLogType
-           , MonadResource
            , MonadThrow
            , MonadTrans
            )
+
+deriving instance MonadBase b m => MonadBase b (LevelDBLog m)
+
+deriving instance MonadResource m => MonadResource (LevelDBLog m)
 
 getEntryFromTable :: MonadResource m => LevelDBLogType -> ByteString -> m (Maybe LevelDBEntry)
 getEntryFromTable (LevelDBLogType table _) tableKey = do

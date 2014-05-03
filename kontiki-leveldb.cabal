@@ -31,8 +31,9 @@ Library
                      , lens
                      , leveldb-haskell
                      , mtl
-                     , resourcet
+                     , resourcet >= 1.1.2
                      , transformers
+                     , transformers-base
                      , QuickCheck
   Ghc-Options:         -Wall -fwarn-incomplete-patterns
   hs-source-dirs:      src
