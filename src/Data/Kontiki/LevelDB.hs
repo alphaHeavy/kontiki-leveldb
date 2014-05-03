@@ -6,7 +6,8 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module Data.Kontiki.LevelDB (
-    initializeLog
+    getEntryFromTable
+  , initializeLog
   , readValue
   , runLevelDBLog
   , truncateLog
