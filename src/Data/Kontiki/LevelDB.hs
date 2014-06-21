@@ -97,8 +97,8 @@ instance MonadResource m => MonadLog (LevelDBLog m) LevelDBMessage where
 
 initializeLog :: MonadResource m => FilePath -> m LevelDBLogType
 initializeLog path = do
-  table <- LDB.open (path </> "table") LDB.defaultOptions
-  transactionIndex <- LDB.open (path </> "index") LDB.defaultOptions
+  table <- LDB.open (path </> "table") LDB.defaultOptions {LDB.createIfMissing = True}
+  transactionIndex <- LDB.open (path </> "index") LDB.defaultOptions {LDB.createIfMissing = True}
   return $ LevelDBLogType table transactionIndex
 
 writeValue :: MonadResource m => LevelDBLogType -> LevelDBEntry -> m ()
